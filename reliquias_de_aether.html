@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#10182d">
+<title>Relíquias de Aether</title>
+<style>
+:root{color-scheme:dark;--bg:#10182d;--panel:#192642;--cyan:#61e7e2;--gold:#ffd166;--muted:#9fb0d0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#263b65,#0b1020 70%);color:#f4f7ff;font-family:system-ui,Segoe UI,Arial;min-height:100vh;display:flex;justify-content:center}
+main{width:min(100%,980px);padding:14px;display:flex;flex-direction:column;gap:10px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}.brand{font-weight:900;letter-spacing:.08em;font-size:clamp(17px,4vw,25px)}.brand span{color:var(--cyan)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.stat,.panel{background:#182642eF;border:1px solid #3a5078;border-radius:13px;padding:9px}.stat b{display:block;font-size:18px;color:var(--gold)}.stat small{color:var(--muted);font-size:11px}
+#stage{position:relative;border:2px solid #425b85;border-radius:16px;overflow:hidden;background:#0b1530;box-shadow:0 14px 40px #0008}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;touch-action:none}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#07101bd9;padding:18px;text-align:center}
+.overlay.hidden{display:none}.modal{max-width:500px;background:#182642;border:1px solid #526b94;border-radius:18px;padding:22px;box-shadow:0 20px 60px #0009}.modal h1{margin:0 0 8px;font-size:clamp(24px,6vw,38px)}.modal p{color:#c4d2ec;line-height:1.5}.btn{border:0;border-radius:12px;background:linear-gradient(135deg,#56e0d7,#4aa3ff);color:#071426;font-weight:900;padding:12px 18px;font-size:15px;cursor:pointer}.btn.secondary{background:#2a3c5f;color:#fff;border:1px solid #536b91}.row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.hudline{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}
+.controls{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.pad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,45px);gap:5px}.pad button,.action{border:1px solid #58719b;background:#223657;color:white;border-radius:11px;font-size:20px;font-weight:800;touch-action:none}.pad button:active,.action:active{background:#42618d}.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}.actions{display:flex;gap:8px}.action{width:64px;height:64px;font-size:13px}.action strong{display:block;font-size:22px;color:var(--gold)}
+footer{color:#93a7ca;font-size:12px;text-align:center}
+@media(min-width:700px){.controls{grid-template-columns:1fr auto}.pad{grid-template-columns:repeat(3,60px);grid-template-rows:repeat(2,48px)}}
+</style>
+</head>
+<body><main>
+<header><div class="brand">✦ RELÍQUIAS <span>DE AETHER</span></div><button class="btn secondary" id="soundBtn">🔊 Som: ligado</button></header>
+<section class="stats">
+ <div class="stat"><b id="hp">♥♥♥</b><small>ENERGIA</small></div><div class="stat"><b id="crystals">0/8</b><small>CRISTAIS</small></div><div class="stat"><b id="score">0</b><small>PONTOS</small></div><div class="stat"><b id="level">1/3</b><small>FASE</small></div>
+</section>
+<div id="stage"><canvas id="game" width="960" height="540" aria-label="Jogo de plataforma"></canvas>
+<div class="overlay" id="menu"><div class="modal"><h1>Relíquias de <span style="color:#61e7e2">Aether</span></h1><p>Explore três regiões, reúna cristais, encontre chaves e abra o portal. Desvie das criaturas-sombra e dos perigos do cenário. Cada fase tem um segredo.</p><p><b>Teclado:</b> A/D ou ←/→ para andar · Espaço/W/↑ para pular · X para pulso de luz.</p><p><b>Celular:</b> use os controles abaixo.</p><button class="btn" id="start">COMEÇAR A AVENTURA</button></div></div>
+<div class="overlay hidden" id="end"><div class="modal"><h1 id="endTitle">Fase concluída!</h1><p id="endText"></p><div class="row"><button class="btn" id="next">CONTINUAR</button><button class="btn secondary" id="retry">RECOMEÇAR FASE</button></div></div></div>
+</div>
+<div class="hudline"><span id="objective">Objetivo: encontre 8 cristais e a chave.</span><span id="message">Boa sorte, explorador!</span></div>
+<section class="controls">
+ <div class="pad"><button class="up" data-key="jump">↑</button><button class="left" data-key="left">←</button><button class="down" data-key="down">↓</button><button class="right" data-key="right">→</button></div>
+ <div class="actions"><button class="action" data-key="pulse"><strong>✧</strong>PULSO</button><button class="action" data-key="jump"><strong>⬆</strong>PULAR</button></div>
+</section>
+<footer>Jogo original • funciona offline após abrir o arquivo • progresso salvo neste dispositivo</footer>
+</main>
+<script>
+(()=>{
+const c=document.getElementById('game'),ctx=c.getContext('2d'),W=960,H=540;
+const $=id=>document.getElementById(id);
+let keys={},running=false,paused=false,level=0,score=0,lives=3,crystals=0,hasKey=false,frame=0,camera=0,shake=0,sound=true,particles=[],toast='',toastTime=0;
+const saved=JSON.parse(localStorage.getItem('aetherSave')||'{}');
+score=saved.score||0;
+const maps=[
+ {name:'Bosque Luminoso',sky:['#102b49','#285a70'],length:2400,spawn:[70,380],crys:[[300,330],[470,260],[680,350],[900,270],[1150,330],[1390,250],[1670,340],[2030,280]],key:[1830,365],exit:2260,plats:[[0,455,500,85],[560,410,180,35],[810,360,190,30],[1060,420,230,35],[1370,365,180,30],[1600,430,250,35],[1910,380,190,30],[2180,455,260,85]],hazards:[[740,435,48,20],[1290,435,45,20],[1850,435,48,20]],enemies:[[620,370,570,780],[1120,380,1070,1270],[1740,390,1630,1850]]},
+ {name:'Cavernas de Cristal',sky:['#171c43','#43366f'],length:2600,spawn:[70,380],crys:[[250,330],[510,250],[780,340],[1040,260],[1300,330],[1580,245],[1900,330],[2240,270]],key:[2040,360],exit:2470,plats:[[0,455,420,85],[470,400,170,30],[720,350,170,30],[970,410,180,30],[1220,360,200,30],[1500,410,190,30],[1770,350,200,30],[2050,410,190,30],[2370,455,300,85]],hazards:[[420,435,45,20],[900,435,45,20],[1430,435,45,20],[1940,435,45,20]],enemies:[[550,360,470,640],[1050,370,970,1150],[1590,370,1500,1690],[2140,370,2050,2280]]},
+ {name:'Templo das Nuvens',sky:['#292653','#71568b'],length:2800,spawn:[60,380],crys:[[260,320],[560,240],[850,330],[1160,230],[1450,330],[1770,240],[2110,320],[2460,230]],key:[2300,360],exit:2670,plats:[[0,455,380,85],[430,390,170,30],[690,330,180,30],[950,400,190,30],[1230,320,190,30],[1510,400,190,30],[1790,330,190,30],[2070,400,190,30],[2370,330,190,30],[2610,455,280,85]],hazards:[[380,435,45,20],[900,435,45,20],[1450,435,45,20],[2000,435,45,20],[2550,435,45,20]],enemies:[[500,350,430,600],[1010,360,950,1120],[1580,360,1510,1690],[2160,360,2080,2300]]}
+];
+let world,player;
+function loadLevel(n){level=n;world=structuredClone(maps[level]);world.enemies=world.enemies.map(e=>({x:e[0],y:e[1],min:e[2],max:e[3],dir:1}));crystals=0;hasKey=false;particles=[];camera=0;player={x:world.spawn[0],y:world.spawn[1],vx:0,vy:0,w:34,h:46,ground:false,inv:0,pulse:0,face:1};$('level').textContent=(level+1)+'/3';$('objective').textContent='Objetivo: encontre 8 cristais e a chave.';updateHUD();$('message').textContent=world.name;}
+function updateHUD(){$('hp').textContent='♥'.repeat(lives)+'♡'.repeat(3-lives);$('crystals').textContent=crystals+'/8';$('score').textContent=score;}
+function say(t){toast=t;toastTime=110;$('message').textContent=t;}
+function burst(x,y,color,n=12){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=1+Math.random()*4;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:35+Math.random()*25,color});}}
+function rect(x,y,w,h,col){ctx.fillStyle=col;ctx.fillRect(x,y,w,h)}
+function draw(){
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,world.sky[0]);g.addColorStop(1,world.sky[1]);rect(0,0,W,H,g);
+ // stars and distant silhouettes
+ for(let i=0;i<65;i++){let x=((i*173+frame*.12)%(W+30));let y=(i*71)%300;ctx.globalAlpha=.25+(i%4)*.12;rect(x,y,2,2,'#e5f7ff')}ctx.globalAlpha=1;
+ for(let layer=0;layer<3;layer++){ctx.fillStyle=['#172b4a','#1b3651','#24445c'][layer];ctx.beginPath();ctx.moveTo(0,H);for(let x=0;x<=W+40;x+=40){let y=300+layer*55+Math.sin((x+camera*(.15+layer*.15))*.012+layer)*35;ctx.lineTo(x,y)}ctx.lineTo(W,H);ctx.fill()}
+ ctx.save();ctx.translate(-camera,0);
+ // platforms
+ for(const p of world.plats){rect(p[0],p[1],p[2],p[3],'#263c57');rect(p[0],p[1],p[2],8,'#68d7c8');for(let x=p[0]+12;x<p[0]+p[2];x+=36)rect(x,p[1]+16,3,Math.max(4,p[3]-20),'#344e69')}
+ // hazards
+ for(const h of world.hazards){ctx.fillStyle='#ff806e';ctx.beginPath();ctx.moveTo(h[0],h[1]+h[3]);ctx.lineTo(h[0]+h[2]/2,h[1]);ctx.lineTo(h[0]+h[2],h[1]+h[3]);ctx.fill()}
+ // crystals
+ world.crys.forEach((p,i)=>{if(p.taken)return;ctx.save();ctx.translate(p[0],p[1]+Math.sin(frame*.07+i)*5);ctx.rotate(Math.PI/4);rect(-9,-9,18,18,'#67f1ed');rect(-4,-4,8,8,'#eaffff');ctx.restore()});
+ if(!world.key.taken){ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(world.key[0],world.key[1],12,0,Math.PI*2);ctx.fill();rect(world.key[0]+8,world.key[1]-3,22,6,'#ffd166');rect(world.key[0]+23,world.key[1]-3,5,13,'#ffd166')}
+ // exit
+ ctx.strokeStyle=hasKey&&crystals>=8?'#70ffbf':'#7888b0';ctx.lineWidth=9;ctx.beginPath();ctx.ellipse(world.exit,405,30,49,0,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#8cf7e5';ctx.globalAlpha=.2;ctx.beginPath();ctx.ellipse(world.exit,405,24,43,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+ // enemies
+ world.enemies.forEach(e=>{let x=e.x;ctx.fillStyle='#15162c';ctx.beginPath();ctx.arc(x,e.y-9,17,Math.PI,0);ctx.lineTo(x+17,e.y+10);ctx.quadraticCurveTo(x,e.y+25,x-17,e.y+10);ctx.fill();rect(x-9,e.y-7,5,5,'#ffb56b');rect(x+5,e.y-7,5,5,'#ffb56b')});
+ // player
+ if(player.inv%6<3||player.inv===0){ctx.fillStyle='#f5c36b';ctx.beginPath();ctx.arc(player.x+17,player.y+10,11,0,Math.PI*2);ctx.fill();rect(player.x+5,player.y+21,24,20,'#4ed5ce');rect(player.x+7,player.y+40,8,6,'#f3f4ff');rect(player.x+20,player.y+40,8,6,'#f3f4ff');rect(player.x+(player.face>0?22:7),player.y+8,4,4,'#15233d')}
+ if(player.pulse>0){ctx.strokeStyle='#a8ffff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(player.x+17,player.y+23,62-player.pulse*3,0,Math.PI*2);ctx.stroke()}
+ particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life/60);rect(p.x,p.y,4,4,p.color)});ctx.globalAlpha=1;
+ ctx.restore();
+ if(toastTime>0){ctx.fillStyle='#071323bb';ctx.fillRect(300,18,360,38);ctx.fillStyle='#fff';ctx.font='bold 17px system-ui';ctx.textAlign='center';ctx.fillText(toast,W/2,44)}
+}
+function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function hurt(){if(player.inv>0)return;lives--;player.inv=100;player.vy=-8;shake=12;burst(player.x+17,player.y+20,'#ff8a78',18);updateHUD();if(lives<=0){running=false;showEnd('Fim de jornada','As sombras venceram desta vez. Tente novamente e use o pulso de luz para afastá-las.','retry')}}
+function pulse(){if(player.pulse>0)return;player.pulse=18;world.enemies=world.enemies.filter(e=>{if(Math.abs(e.x-player.x)<115){burst(e.x,e.y,'#8dfcf2',15);score+=50;return false}return true});say('Pulso de luz!');}
+function update(){
+ if(!running)return;frame++;if(player.inv>0)player.inv--;if(player.pulse>0)player.pulse--;if(shake>0)shake--;if(toastTime>0)toastTime--;
+ let dir=(keys.right?1:0)-(keys.left?1:0);player.vx=dir*4.3;if(dir)player.face=dir;player.vy+=.55;player.vy=Math.min(player.vy,13);
+ if((keys.jump||keys.up)&&player.ground){player.vy=-12.2;player.ground=false}
+ if(keys.pulse){pulse();keys.pulse=false}
+ player.x+=player.vx;for(const p of world.plats){if(overlap(player,{x:p[0],y:p[1],w:p[2],h:p[3]})&&player.vx!==0){if(player.vx>0)player.x=p[0]-player.w;else player.x=p[0]+p[2]}}
+ player.y+=player.vy;player.ground=false;
+ for(const p of world.plats){let r={x:p[0],y:p[1],w:p[2],h:p[3]};if(overlap(player,r)){if(player.vy>0&&player.y+player.h-player.vy<=p[1]+8){player.y=p[1]-player.h;player.vy=0;player.ground=true}else if(player.vy<0){player.y=p[1]+p[3];player.vy=1}}}
+ player.x=Math.max(0,Math.min(world.length-player.w,player.x));
+ if(player.y>H+80){hurt();player.x=Math.max(50,player.x-100);player.y=250}
+ for(const h of world.hazards)if(overlap(player,{x:h[0],y:h[1],w:h[2],h:h[3]}))hurt();
+ for(const p of world.crys){if(!p.taken&&Math.abs(player.x+17-p[0])<24&&Math.abs(player.y+22-p[1])<28){p.taken=true;crystals++;score+=100;burst(p[0],p[1],'#67f1ed',16);say('Cristal coletado +100');updateHUD()}}
+ if(!world.key.taken&&Math.abs(player.x+17-world.key[0])<28&&Math.abs(player.y+20-world.key[1])<35){world.key.taken=true;hasKey=true;score+=250;say('Chave antiga encontrada! +250');updateHUD()}
+ for(const e of world.enemies){e.x+=e.dir||1;if(!e.dir)e.dir=1;if(e.x<e.min||e.x>e.max)e.dir*=-1;if(overlap(player,{x:e.x-16,y:e.y-20,w:32,h:40})){if(player.vy>1&&player.y+player.h<e.y+10){world.enemies=world.enemies.filter(x=>x!==e);player.vy=-8;score+=150;burst(e.x,e.y,'#a9a4ff',15);updateHUD()}else hurt()}}
+ if(player.x+17>world.exit-25&&player.x<world.exit+25){if(crystals>=8&&hasKey){running=false;score+=500;updateHUD();showEnd(level===2?'Aether restaurado!':'Região purificada!',`Você concluiu ${world.name}. Bônus de portal: +500 pontos.`,level===2?'finish':'next')}else say('O portal exige 8 cristais e a chave.')}
+ camera=Math.max(0,Math.min(world.length-W,player.x-W*.38));
+ particles=particles.filter(p=>p.life-->0);particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.08});
+ updateHUD();
+}
+function showEnd(title,text,mode){$('endTitle').textContent=title;$('endText').textContent=text;$('end').classList.remove('hidden');$('next').style.display=mode==='next'?'inline-block':'none';$('next').textContent=mode==='finish'?'JOGAR DE NOVO':'PRÓXIMA REGIÃO';$('next').onclick=()=>{if(mode==='finish'){score=0;lives=3;loadLevel(0);$('end').classList.add('hidden');running=true}else{loadLevel(level+1);$('end').classList.add('hidden');running=true}}}
+function loop(){update();ctx.save();if(shake)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);draw();ctx.restore();requestAnimationFrame(loop)}
+function start(){lives=3;score=0;loadLevel(0);$('menu').classList.add('hidden');$('end').classList.add('hidden');running=true}
+$('start').onclick=start;$('retry').onclick=()=>{lives=3;loadLevel(level);$('end').classList.add('hidden');running=true};
+$('soundBtn').onclick=()=>{sound=!sound;$('soundBtn').textContent=sound?'🔊 Som: ligado':'🔇 Som: desligado'};
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(['arrowleft','arrowright','arrowup',' ','arrowdown'].includes(k))e.preventDefault();if(k==='a'||k==='arrowleft')keys.left=true;if(k==='d'||k==='arrowright')keys.right=true;if(k==='w'||k==='arrowup'||k===' ')keys.jump=true;if(k==='x')keys.pulse=true});
+window.addEventListener('keyup',e=>{let k=e.key.toLowerCase();if(k==='a'||k==='arrowleft')keys.left=false;if(k==='d'||k==='arrowright')keys.right=false;if(k==='w'||k==='arrowup'||k===' ')keys.jump=false});
+document.querySelectorAll('[data-key]').forEach(b=>{let k=b.dataset.key;const on=e=>{e.preventDefault();keys[k]=true},off=e=>{e.preventDefault();keys[k]=false};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointerleave',off);b.addEventListener('pointercancel',off)});
+loadLevel(0);loop();
+})();
+</script></body></html>
